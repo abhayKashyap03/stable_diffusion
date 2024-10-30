@@ -52,3 +52,47 @@ class SelfAttention(nn.Module):
         out = out.transpose(1, 2).reshape(inp_shape)
 
         return out
+
+
+class CrossAttention(nn.Module):
+    def __init__(self, n_heads: int, embedding_size: int, d_cross: int, in_proj_bias=True, out_proj_bias=True):
+        super().__init__()
+        self.q_proj = nn.Linear(embedding_size, embedding_size, bias=in_proj_bias)
+        self.k_proj = nn.Linear(d_cross, embedding_size, bias=in_proj_bias)
+        self.v_proj = nn.Linear(d_cross, embedding_size, bias=in_proj_bias)
+        self.out_proj = nn.Linear(embedding_size, embedding_size, bias=out_proj_bias)
+        self.n_heads = n_heads
+        self.d_head = embedding_size // n_heads
+    
+    def forward(self, x, y):
+        """
+        Feedforward function for cross attention layer
+        
+        Args:
+        x (torch.Tensor): Latent tensor (batch_size, seq_len_q, dim_q)
+        y (torch.Tensor): Context tensor (batch_size, seq_len_kv, dim_kv) = (batch_size, 77, 768)
+        """
+
+        inp_shape = x.shape
+        batch_size, seq_len, embedding_size = inp_shape
+
+        interim_shape = (batch_size, -1, self.n_heads, self.d_head)
+
+        q = self.q_proj(x)
+        k = self.k_proj(y)
+        v = self.v_proj(y)
+
+        q = q.view(interim_shape).transpose(1, 2)
+        k = k.view(interim_shape).transpose(1, 2)
+        v = v.view(interim_shape).transpose(1, 2)
+
+        weight = q @ k.transpose(-1, -2)
+        weight /= math.sqrt(self.d_head)
+        weight = f.softmax(weight, dim=-1)
+
+        out = weight @ v
+        out = out.transpose(1, 2).contiguous()
+        out = out.view(inp_shape)
+        out = self.out_proj(out)
+
+        return out
